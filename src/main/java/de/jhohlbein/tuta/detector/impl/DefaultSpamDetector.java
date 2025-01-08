@@ -1,6 +1,7 @@
 package de.jhohlbein.tuta.detector.impl;
 
 import de.jhohlbein.tuta.detector.SpamDetector;
+import de.jhohlbein.tuta.detector.data.Email;
 import org.apache.commons.configuration2.Configuration;
 import org.apache.commons.configuration2.builder.fluent.Configurations;
 import org.apache.commons.configuration2.ex.ConfigurationException;
@@ -9,7 +10,10 @@ import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 
 import java.io.File;
-import java.util.*;
+import java.util.ArrayList;
+import java.util.Comparator;
+import java.util.List;
+import java.util.Map;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -17,7 +21,6 @@ import static java.lang.String.join;
 import static java.util.Arrays.stream;
 import static java.util.function.Function.identity;
 import static java.util.regex.Pattern.compile;
-import static java.util.stream.Collectors.joining;
 import static java.util.stream.Collectors.toMap;
 
 /**
@@ -25,7 +28,7 @@ import static java.util.stream.Collectors.toMap;
  */
 public class DefaultSpamDetector implements SpamDetector {
 
-    private static Logger LOG = LogManager.getLogger(DefaultSpamDetector.class);
+    private static final Logger LOG = LogManager.getLogger(DefaultSpamDetector.class);
 
     final private Configuration config;
 
@@ -39,43 +42,42 @@ public class DefaultSpamDetector implements SpamDetector {
     }
 
     @Override
-    public List<Set<Integer>> findDocumentClustersBySimilarity(final List<String> documents) {
-        final ArrayList<Set<Integer>> result = new ArrayList<>();
-        // Compare all the documents with all the others.
-        for (final String document : documents) {
-            final Set<Integer> documentCluster = new HashSet<>();
-            final int documentIndex = documents.indexOf(document);
-            documents.stream() //
-                    .filter(toCompare -> documents.indexOf(toCompare) > documentIndex) //
+    public List<Email> calculateSimilarityScoringAndCategorizeSpamForEmails(final List<Email> emails) {
+
+        // Compare all the emails with all the others.
+        for (final Email email : emails) {
+            emails.stream() //
+                    .filter(toCompare -> emails.indexOf(toCompare) > emails.indexOf(email)) //
                     .forEach(toCompare -> {
+                        LOG.debug("Comparing emails {} and {}", email.getId(), toCompare.getId());
                         // Calculate the similarity
-                        final Double similarity = calculateSimilarityBetweenTwoStrings(document, toCompare);
+                        final Double similarity = calculateSimilarityBetweenTwoStrings(email.getBody(),
+                                toCompare.getBody());
                         // Check if it exceeds the threshold
-                        if (similarity > config.getDouble("spamdetector.similarity.threshhold")) {
-                            documentCluster.add(documentIndex);
-                            documentCluster.add(documents.indexOf(toCompare));
-                        }
+                        setSpamScoringIfGreaterThanExistingSpamScoring(email, similarity);
+                        setSpamScoringIfGreaterThanExistingSpamScoring(toCompare, similarity);
                     });
-            if (!documentCluster.isEmpty()) {
-                boolean clusterAlreadyFound =
-                        result.stream().anyMatch(clusterFound -> clusterFound.containsAll(documentCluster));
-                if (clusterAlreadyFound) {
-                    LOG.debug("Cluster [{}] already found. skipping",
-                            documentCluster.stream().map(String::valueOf).collect(joining(", ")));
-                    continue;
-                }
-                result.add(documentCluster);
-                LOG.info("Found a cluster of similar documents. The indexes of this cluster are as follows: [{}]",
-                        documentCluster.stream().map(String::valueOf).collect(joining(", ")));
-            }
         }
-        return result;
+        emails.sort(Comparator.comparing(Email::getSpamScoring).reversed());
+        return emails;
+    }
+
+    private void setSpamScoringIfGreaterThanExistingSpamScoring(final Email email, final Double similarity) {
+        if (email.getSpamScoring() == null || similarity > email.getSpamScoring()) {
+            email.setSpamScoring(similarity);
+            final double spamThreshold = config.getDouble("spamdetector.similarity.threshold");
+            final boolean spam = similarity > spamThreshold;
+            if (spam) {
+                LOG.info("Spam detected: Email {} exceeds the threshold of {}", email.getId(), spamThreshold);
+            }
+            email.setSpam(spam);
+        }
     }
 
     @Override
-    public Double calculateSimilarityBetweenTwoStrings(final String firstDocument, final String secondDocument) {
-        final Map<CharSequence, Integer> firstVector = transformStringToVector(firstDocument);
-        final Map<CharSequence, Integer> secondVector = transformStringToVector(secondDocument);
+    public Double calculateSimilarityBetweenTwoStrings(final String firstString, final String secondString) {
+        final Map<CharSequence, Integer> firstVector = transformStringToVector(firstString);
+        final Map<CharSequence, Integer> secondVector = transformStringToVector(secondString);
 
         final CosineSimilarity cosineSimilarity = new CosineSimilarity();
         return cosineSimilarity.cosineSimilarity(firstVector, secondVector);

@@ -1,24 +1,25 @@
 package de.jhohlbein.tuta.detector;
 
+import de.jhohlbein.tuta.detector.data.Email;
+
 import java.util.List;
-import java.util.Set;
 
 public interface SpamDetector {
 
     /**
-     * Takes a list of documents as {{@link String}} and finds clusters of similar documents. The results will contain a
-     * list of all indexes of documents in the original list, that are part of a cluster
+     * Takes a list of {@link Email}s and calculates the scoring for each based on similarity to the other emails.
+     * The input list will be returned as result with the spamScoring set on each email.
      *
-     * @param documents The document list of clusters to find
-     * @return the resulting list of clusters, which are represented by {{@link Set}} of indexes
+     * @param emails The email list, that should be calculated
+     * @return the resulting list of {@link Email}s, with the scores set
      */
-    List<Set<Integer>> findDocumentClustersBySimilarity(List<String> documents);
+    List<Email> calculateSimilarityScoringAndCategorizeSpamForEmails(List<Email> emails);
 
     /**
      * Calculates the similarity between two
      *
-     * @param doc1 The first document as {@link String}
-     * @param doc2 The second document as {@link String}
+     * @param doc1 The first {@link String}
+     * @param doc2 The second {@link String}
      * @return The similarity as {@link Double}
      */
     Double calculateSimilarityBetweenTwoStrings(String doc1, String doc2);
